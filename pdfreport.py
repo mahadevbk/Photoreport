@@ -137,7 +137,7 @@ def generate_pdf(pages, project_name, username, report_date):
         pdf.set_xy(10, desc_y)
         pdf.set_fill_color(255, 255, 255)
         pdf.set_font("Arial", "", 12)
-        pdf.cell(190, 10, f"Image(s) Subject: {page['title']}", ln=1, fill=True)
+        pdf.cell(190, 10, f" Subject: {page['title']}", ln=1, fill=True)
 
         # Grey background for description block
         pdf.set_fill_color(240, 240, 240)
