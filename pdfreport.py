@@ -1,3 +1,5 @@
+
+
 import streamlit as st
 from fpdf import FPDF
 from PIL import Image
@@ -179,3 +181,7 @@ if st.session_state.pages:
                 file_name=f"{project_name.replace(' ', '_')}_Photo_Report.pdf",
                 mime="application/pdf"
             )
+# ------------------ FOOTER -------------------
+st.markdown("---")
+st.markdown("Dev's PDF Editor | Code on https://github.com/mahadevbk/pdfeditor ")
+st.info("Built with ❤️ using [Streamlit](https://streamlit.io/) — free and open source. [Other Scripts by dev](https://devs-scripts.streamlit.app/) on Streamlit.")
