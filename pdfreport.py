@@ -1,105 +1,30 @@
 import streamlit as st
 from fpdf import FPDF
 from PIL import Image
+from pdf2image import convert_from_bytes
+from io import BytesIO
 import tempfile
 import os
 import datetime
-from io import BytesIO
-from pdf2image import convert_from_bytes
 
-# Page setup
+# ---------- CONFIG ----------
 st.set_page_config(layout="wide")
 st.title("\U0001F4F8 Multi-page PDF Photo Report Creator")
 
-# Session state setup
+# ---------- SESSION STATE ----------
 if "pages" not in st.session_state:
     st.session_state.pages = []
 
 if "edit_index" not in st.session_state:
     st.session_state.edit_index = None
 
-# Sidebar: Project Info
+# ---------- SIDEBAR ----------
 st.sidebar.header("Project Info")
 project_name = st.sidebar.text_input("Project Name")
 username = st.sidebar.text_input("Your Name")
 report_date = st.sidebar.date_input("Report Date", value=datetime.date.today())
 
-# Add new page
-st.markdown("---")
-st.subheader("➕ Add New Page")
-
-new_images = st.file_uploader("Upload 1 to 4 images", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="uploader")
-new_title = st.text_input("Photo Set Title", key="title_input")
-new_description = st.text_area("Photo Description (room for ~10 lines)", height=200, key="desc_input")
-
-if st.button("Add Page", key="add_button"):
-    if not (1 <= len(new_images) <= 4):
-        st.warning("Please upload between 1 and 4 images.")
-    elif not new_description.strip():
-        st.warning("Please enter a description.")
-    else:
-        st.session_state.pages.append({
-            "images": new_images,
-            "title": new_title,
-            "description": new_description
-        })
-        st.success("Page added!")
-        st.session_state.edit_index = None
-
-# ------------------ HELPER: Generate preview image from PDF ------------------
-def generate_preview_image(page_data, project_name, username, report_date):
-    # Generate PDF with just this page
-    pdf_bytes = generate_pdf([page_data], project_name, username, report_date)
-    try:
-        images = convert_from_bytes(pdf_bytes, first_page=1, last_page=1)
-        img_byte_arr = BytesIO()
-        images[0].save(img_byte_arr, format='PNG')
-        img_byte_arr.seek(0)
-        return img_byte_arr
-    except Exception as e:
-        st.warning(f"Could not generate thumbnail preview: {e}")
-        return None
-
-# ------------------ PREVIEW SECTION ------------------
-st.markdown("---")
-st.subheader("\U0001F5BC️ Current Pages")
-
-to_delete = None
-for i, page in enumerate(st.session_state.pages):
-    cols = st.columns([1, 4, 1])
-    with cols[1]:
-        preview_img = generate_preview_image(page, project_name, username, report_date)
-        if preview_img:
-            st.image(preview_img, width=200, caption=page["title"])
-        else:
-            st.image(page["images"][0], width=200, caption="(Fallback preview)")
-
-    with cols[2]:
-        if st.button("📝 Edit", key=f"edit_{i}"):
-            st.session_state.edit_index = i
-        if st.button("❌ Delete", key=f"delete_{i}"):
-            to_delete = i
-
-    if st.session_state.edit_index == i:
-        st.markdown(f"### ✏️ Editing Page {i+1}")
-        edit_title = st.text_input("Edit Title", value=page["title"], key=f"edit_title_{i}")
-        edit_description = st.text_area("Edit Description", value=page["description"], height=200, key=f"edit_desc_{i}")
-        edit_images = st.file_uploader("Replace Images (Optional)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=f"edit_images_{i}")
-        if st.button("💾 Save Changes", key=f"save_{i}"):
-            st.session_state.pages[i]["title"] = edit_title
-            st.session_state.pages[i]["description"] = edit_description
-            if edit_images:
-                st.session_state.pages[i]["images"] = edit_images
-            st.session_state.edit_index = None
-            st.success("Page updated.")
-        if st.button("❎ Cancel", key=f"cancel_{i}"):
-            st.session_state.edit_index = None
-
-if to_delete is not None:
-    st.session_state.pages.pop(to_delete)
-    st.success("Page deleted.")
-
-# ------------------ PDF GENERATOR ------------------
+# ---------- FUNCTION: Generate PDF ----------
 def generate_pdf(pages, project_name, username, report_date):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.set_auto_page_break(auto=False)
@@ -116,6 +41,7 @@ def generate_pdf(pages, project_name, username, report_date):
         y_offset = 25
         gap = 5
 
+        # Grey background for image section
         pdf.set_fill_color(220, 220, 220)
         pdf.rect(10, y_offset - 5, full_width, collage_height + 10, 'F')
 
@@ -155,11 +81,14 @@ def generate_pdf(pages, project_name, username, report_date):
                 os.remove(temp_img_path)
 
         desc_y = y_offset + collage_height + 10
+
+        # Title
         pdf.set_xy(10, desc_y)
         pdf.set_fill_color(255, 255, 255)
         pdf.set_font("Arial", "", 12)
         pdf.cell(190, 10, f" Subject: {page['title']}", ln=1, fill=True)
 
+        # Description box
         pdf.set_fill_color(240, 240, 240)
         pdf.cell(190, 10, "Description:", ln=1, fill=True)
 
@@ -171,18 +100,91 @@ def generate_pdf(pages, project_name, username, report_date):
         for line in lines:
             pdf.cell(190, 10, txt=line, ln=1, fill=True)
 
+        # Footer
         pdf.set_y(-30)
         pdf.set_font("Arial", "I", 10)
         pdf.cell(0, 10, f"Created by: {username}", ln=1)
         pdf.cell(0, 10, f"Date: {report_date}", ln=1)
 
+        # Page number
         pdf.set_y(-10)
         pdf.set_font("Arial", "", 10)
         pdf.cell(0, 10, f"Page {page_num}", align="C")
 
     return pdf.output(dest='S').encode('latin1')
 
-# ------------------ PDF DOWNLOAD SECTION ------------------
+# ---------- FUNCTION: Generate Preview Image ----------
+def generate_preview_image(page_data, project_name, username, report_date):
+    pdf_bytes = generate_pdf([page_data], project_name, username, report_date)
+    try:
+        images = convert_from_bytes(pdf_bytes, first_page=1, last_page=1)
+        img_byte_arr = BytesIO()
+        images[0].save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+        return img_byte_arr
+    except Exception as e:
+        st.warning(f"Could not generate thumbnail preview: {e}")
+        return None
+
+# ---------- PAGE INPUT ----------
+st.markdown("---")
+st.subheader("➕ Add New Page")
+
+new_images = st.file_uploader("Upload 1 to 4 images", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="uploader")
+new_title = st.text_input("Photo Set Title", key="title_input")
+new_description = st.text_area("Photo Description (room for ~10 lines)", height=200, key="desc_input")
+
+if st.button("Add Page", key="add_button"):
+    if not (1 <= len(new_images) <= 4):
+        st.warning("Please upload between 1 and 4 images.")
+    elif not new_description.strip():
+        st.warning("Please enter a description.")
+    else:
+        st.session_state.pages.append({
+            "images": new_images,
+            "title": new_title,
+            "description": new_description
+        })
+        st.success("Page added!")
+        st.session_state.edit_index = None
+
+# ---------- PREVIEW PAGES ----------
+st.markdown("---")
+st.subheader("\U0001F5BC️ Current Pages")
+
+to_delete = None
+for i, page in enumerate(st.session_state.pages):
+    cols = st.columns([1, 4, 1])
+    with cols[1]:
+        preview_img = generate_preview_image(page, project_name, username, report_date)
+        if preview_img:
+            st.image(preview_img, width=200, caption=page["title"])
+    with cols[2]:
+        if st.button("📝 Edit", key=f"edit_{i}"):
+            st.session_state.edit_index = i
+        if st.button("❌ Delete", key=f"delete_{i}"):
+            to_delete = i
+
+    if st.session_state.edit_index == i:
+        st.markdown(f"### ✏️ Editing Page {i+1}")
+        edit_title = st.text_input("Edit Title", value=page["title"], key=f"edit_title_{i}")
+        edit_description = st.text_area("Edit Description", value=page["description"], height=200, key=f"edit_desc_{i}")
+        edit_images = st.file_uploader("Replace Images (Optional)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=f"edit_images_{i}")
+        if st.button("💾 Save Changes", key=f"save_{i}"):
+            st.session_state.pages[i]["title"] = edit_title
+            st.session_state.pages[i]["description"] = edit_description
+            if edit_images:
+                st.session_state.pages[i]["images"] = edit_images
+            st.session_state.edit_index = None
+            st.success("Page updated.")
+        if st.button("❎ Cancel", key=f"cancel_{i}"):
+            st.session_state.edit_index = None
+
+if to_delete is not None:
+    st.session_state.pages.pop(to_delete)
+    st.success("Page deleted.")
+
+# ---------- GENERATE PDF ----------
 if st.session_state.pages:
     st.markdown("---")
     st.subheader("\U0001F4C4 Generate Photo Report")
@@ -198,7 +200,7 @@ if st.session_state.pages:
                 mime="application/pdf"
             )
 
-# ------------------ FOOTER ------------------
+# ---------- FOOTER ----------
 st.markdown("---")
 st.markdown("Dev's PDF Editor | Code on https://github.com/mahadevbk/pdfeditor ")
 st.info("Built with ❤️ using [Streamlit](https://streamlit.io/) — free and open source. [Other Scripts by dev](https://devs-scripts.streamlit.app/) on Streamlit.")
