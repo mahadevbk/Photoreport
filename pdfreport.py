@@ -1,15 +1,17 @@
-
-
 import streamlit as st
 from fpdf import FPDF
 from PIL import Image
 import tempfile
 import os
 import datetime
+from io import BytesIO
+from pdf2image import convert_from_bytes
 
+# Page setup
 st.set_page_config(layout="wide")
 st.title("\U0001F4F8 Multi-page PDF Photo Report Creator")
 
+# Session state setup
 if "pages" not in st.session_state:
     st.session_state.pages = []
 
@@ -22,6 +24,7 @@ project_name = st.sidebar.text_input("Project Name")
 username = st.sidebar.text_input("Your Name")
 report_date = st.sidebar.date_input("Report Date", value=datetime.date.today())
 
+# Add new page
 st.markdown("---")
 st.subheader("➕ Add New Page")
 
@@ -43,7 +46,21 @@ if st.button("Add Page", key="add_button"):
         st.success("Page added!")
         st.session_state.edit_index = None
 
-# --- Thumbnail Preview Section ---
+# ------------------ HELPER: Generate preview image from PDF ------------------
+def generate_preview_image(page_data, project_name, username, report_date):
+    # Generate PDF with just this page
+    pdf_bytes = generate_pdf([page_data], project_name, username, report_date)
+    try:
+        images = convert_from_bytes(pdf_bytes, first_page=1, last_page=1)
+        img_byte_arr = BytesIO()
+        images[0].save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+        return img_byte_arr
+    except Exception as e:
+        st.warning(f"Could not generate thumbnail preview: {e}")
+        return None
+
+# ------------------ PREVIEW SECTION ------------------
 st.markdown("---")
 st.subheader("\U0001F5BC️ Current Pages")
 
@@ -51,7 +68,12 @@ to_delete = None
 for i, page in enumerate(st.session_state.pages):
     cols = st.columns([1, 4, 1])
     with cols[1]:
-        st.image(page["images"][0], width=200, caption=page["title"])
+        preview_img = generate_preview_image(page, project_name, username, report_date)
+        if preview_img:
+            st.image(preview_img, width=200, caption=page["title"])
+        else:
+            st.image(page["images"][0], width=200, caption="(Fallback preview)")
+
     with cols[2]:
         if st.button("📝 Edit", key=f"edit_{i}"):
             st.session_state.edit_index = i
@@ -77,7 +99,7 @@ if to_delete is not None:
     st.session_state.pages.pop(to_delete)
     st.success("Page deleted.")
 
-# --- PDF Generator ---
+# ------------------ PDF GENERATOR ------------------
 def generate_pdf(pages, project_name, username, report_date):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.set_auto_page_break(auto=False)
@@ -94,7 +116,6 @@ def generate_pdf(pages, project_name, username, report_date):
         y_offset = 25
         gap = 5
 
-        # Grey background for image section - full width
         pdf.set_fill_color(220, 220, 220)
         pdf.rect(10, y_offset - 5, full_width, collage_height + 10, 'F')
 
@@ -134,14 +155,11 @@ def generate_pdf(pages, project_name, username, report_date):
                 os.remove(temp_img_path)
 
         desc_y = y_offset + collage_height + 10
-
-        # Title (Image Subject) with white background
         pdf.set_xy(10, desc_y)
         pdf.set_fill_color(255, 255, 255)
         pdf.set_font("Arial", "", 12)
         pdf.cell(190, 10, f" Subject: {page['title']}", ln=1, fill=True)
 
-        # Grey background for description block
         pdf.set_fill_color(240, 240, 240)
         pdf.cell(190, 10, "Description:", ln=1, fill=True)
 
@@ -153,20 +171,18 @@ def generate_pdf(pages, project_name, username, report_date):
         for line in lines:
             pdf.cell(190, 10, txt=line, ln=1, fill=True)
 
-        # Footer
         pdf.set_y(-30)
         pdf.set_font("Arial", "I", 10)
         pdf.cell(0, 10, f"Created by: {username}", ln=1)
         pdf.cell(0, 10, f"Date: {report_date}", ln=1)
 
-        # Page number
         pdf.set_y(-10)
         pdf.set_font("Arial", "", 10)
         pdf.cell(0, 10, f"Page {page_num}", align="C")
 
     return pdf.output(dest='S').encode('latin1')
 
-# Generate PDF
+# ------------------ PDF DOWNLOAD SECTION ------------------
 if st.session_state.pages:
     st.markdown("---")
     st.subheader("\U0001F4C4 Generate Photo Report")
@@ -181,7 +197,8 @@ if st.session_state.pages:
                 file_name=f"{project_name.replace(' ', '_')}_Photo_Report.pdf",
                 mime="application/pdf"
             )
-# ------------------ FOOTER -------------------
+
+# ------------------ FOOTER ------------------
 st.markdown("---")
 st.markdown("Dev's PDF Editor | Code on https://github.com/mahadevbk/pdfeditor ")
 st.info("Built with ❤️ using [Streamlit](https://streamlit.io/) — free and open source. [Other Scripts by dev](https://devs-scripts.streamlit.app/) on Streamlit.")
