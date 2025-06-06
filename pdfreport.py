@@ -1,6 +1,6 @@
 import streamlit as st
 from fpdf import FPDF
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 import tempfile
 import os
 import datetime
@@ -23,7 +23,9 @@ report_date = st.sidebar.date_input("Report Date", value=datetime.date.today())
 st.markdown("---")
 st.subheader("➕ Add New Page")
 
-new_images = st.file_uploader("Upload 1 to 4 images", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="uploader")
+new_images = st.file_uploader(
+    "Upload 1 to 4 images", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="uploader"
+)
 new_title = st.text_input("Photo Set Title", key="title_input")
 new_description = st.text_area("Photo Description (room for ~10 lines)", height=200, key="desc_input")
 
@@ -41,45 +43,7 @@ if st.button("Add Page", key="add_button"):
         st.success("Page added!")
         st.session_state.edit_index = None
 
-# ---- Helper to Generate Thumbnail Image from Page ----
-def generate_thumbnail(page):
-    width, height = 600, 400
-    bg_color = (245, 245, 245)
-    font_color = (0, 0, 0)
-
-    # Create canvas
-    thumb = Image.new("RGB", (width, height), bg_color)
-    draw = ImageDraw.Draw(thumb)
-
-    try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 16)
-    except:
-        font = ImageFont.load_default()
-
-    # Draw title
-    draw.text((10, 10), f"Subject: {page['title']}", fill=font_color, font=font)
-
-    # Arrange images (max 2x2 grid)
-    img_w, img_h = 140, 100
-    start_x, start_y = 10, 40
-    gap = 10
-
-    for i, uploaded_img in enumerate(page["images"][:4]):
-        img = Image.open(uploaded_img).convert("RGB")
-        img.thumbnail((img_w, img_h))
-        x = start_x + (i % 2) * (img_w + gap)
-        y = start_y + (i // 2) * (img_h + gap)
-        thumb.paste(img, (x, y))
-
-    # Draw description
-    desc_start = 220
-    lines = page["description"].splitlines()
-    for i, line in enumerate(lines[:6]):
-        draw.text((10, desc_start + i * 20), line, fill=font_color, font=font)
-
-    return thumb
-
-# --- Preview Pages ---
+# --- Thumbnail Preview Section ---
 st.markdown("---")
 st.subheader("🖼️ Current Pages")
 
@@ -87,8 +51,12 @@ to_delete = None
 for i, page in enumerate(st.session_state.pages):
     cols = st.columns([1, 4, 1])
     with cols[1]:
-        thumbnail = generate_thumbnail(page)
-        st.image(thumbnail, caption=page["title"], use_column_width=True)
+        try:
+            page["images"][0].seek(0)  # ensure pointer is at start
+            st.image(page["images"][0], width=200, caption=page["title"])
+        except Exception:
+            st.warning("Couldn't load thumbnail.")
+
     with cols[2]:
         if st.button("📝 Edit", key=f"edit_{i}"):
             st.session_state.edit_index = i
@@ -131,6 +99,7 @@ def generate_pdf(pages, project_name, username, report_date):
         y_offset = 25
         gap = 5
 
+        # Grey background for image section - full width
         pdf.set_fill_color(220, 220, 220)
         pdf.rect(10, y_offset - 5, full_width, collage_height + 10, 'F')
 
@@ -141,6 +110,7 @@ def generate_pdf(pages, project_name, username, report_date):
         img_h = (collage_height - gap * (rows - 1)) / rows
 
         for i, img_file in enumerate(page["images"]):
+            img_file.seek(0)  # 🔧 Ensure pointer is at start
             img = Image.open(img_file)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
                 img.save(tmp_file.name, format="JPEG")
@@ -170,33 +140,39 @@ def generate_pdf(pages, project_name, username, report_date):
                 os.remove(temp_img_path)
 
         desc_y = y_offset + collage_height + 10
+
+        # Title (Image Subject) with white background
         pdf.set_xy(10, desc_y)
         pdf.set_fill_color(255, 255, 255)
         pdf.set_font("Arial", "", 12)
         pdf.cell(190, 10, f" Subject: {page['title']}", ln=1, fill=True)
 
+        # Grey background for description block
         pdf.set_fill_color(240, 240, 240)
         pdf.cell(190, 10, "Description:", ln=1, fill=True)
-        pdf.set_font("Arial", size=12)
 
+        pdf.set_font("Arial", size=12)
         lines = page["description"].splitlines()
         while len(lines) < 10:
             lines.append("")
+
         for line in lines:
             pdf.cell(190, 10, txt=line, ln=1, fill=True)
 
+        # Footer
         pdf.set_y(-30)
         pdf.set_font("Arial", "I", 10)
         pdf.cell(0, 10, f"Created by: {username}", ln=1)
         pdf.cell(0, 10, f"Date: {report_date}", ln=1)
 
+        # Page number
         pdf.set_y(-10)
         pdf.set_font("Arial", "", 10)
         pdf.cell(0, 10, f"Page {page_num}", align="C")
 
     return pdf.output(dest='S').encode('latin1')
 
-# --- Download Button ---
+# Generate PDF
 if st.session_state.pages:
     st.markdown("---")
     st.subheader("📄 Generate Photo Report")
@@ -212,7 +188,7 @@ if st.session_state.pages:
                 mime="application/pdf"
             )
 
-# --- Footer ---
+# ------------------ FOOTER -------------------
 st.markdown("---")
-st.markdown("Dev's PDF Editor | [Code on GitHub](https://github.com/mahadevbk/pdfeditor)")
-st.info("Built with ❤️ using [Streamlit](https://streamlit.io/) — check [other apps](https://devs-scripts.streamlit.app/)")
+st.markdown("Dev's PDF Editor | Code on [GitHub](https://github.com/mahadevbk/pdfeditor)")
+st.info("Built with ❤️ using [Streamlit](https://streamlit.io/) — free and open source. [Other Scripts by dev](https://devs-scripts.streamlit.app/)")
